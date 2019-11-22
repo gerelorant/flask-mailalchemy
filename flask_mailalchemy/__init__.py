@@ -1,1 +1,1 @@
-from flask_mailalchemy.core import MailAlchemy, Message
+from flask_mailalchemy.core import MailAlchemy, Message, EmailMixin

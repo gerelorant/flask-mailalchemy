@@ -14,16 +14,24 @@ Additional parameters include `MAIL_PER_MINUTE`, `MAIL_PER_HOUR` and
 ### Initialize
 
 The MailAlchemy extension can be initialized like any other Flask extension.
-Flask-SQLAlchemy instance is needed. You can also provide the Flask app after
-initialization with `mail.init_app(app)`. 
+Flask-SQLAlchemy instance is needed. Custom Email model can be provided for
+extending the model with extra functionality (e.g.: Adding foreign key to user
+table). If `email_class` is `None`, a simple Email model is used. You can also 
+provide the Flask app after initialization with `mail.init_app(app)`. 
 ```python
 from flask import Flask
-from flask_mailalchemy import MailAlchemy, Message
+from flask_mailalchemy import MailAlchemy, Message, EmailMixin
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 db = SQLAlchemy(app)
-mail = MailAlchemy(app, db)
+
+
+class Email(db.Model, EmailMixin):
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    
+
+mail = MailAlchemy(app, db, Email)
 
 
 if __name__ == '__main__':
@@ -88,7 +96,7 @@ consists of 4 regular blocks and one content block.
 ```
 The regular blocks are found in `templates/mail/blocks`. The base and block 
 templates have both an HTML and a plaintext version. For your e-mail templates
-simply extend the base template and override the `contenct` block.
+simply extend the base template and override the `content` block.
 ```jinja2
 {% extends 'mail/base.html' %}
 
