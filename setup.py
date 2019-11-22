@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='Flask-MailAlchemy',
-    version='0.3',
+    version='0.4',
     packages=['flask_mailalchemy'],
     url='https://github.com/gerelorant/flask-mailalchemy',
     license='MIT',

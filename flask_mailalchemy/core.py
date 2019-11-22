@@ -1,4 +1,6 @@
 import datetime as dt
+import mimetypes
+import os
 import threading as th
 import time as tm
 
@@ -158,6 +160,25 @@ class MailAlchemy:
             )
         except FileNotFoundError:
             pass
+
+    def attach_file(self, msg: Message, path: str):
+        """Attach file to Message.
+
+        Args:
+            msg: Message instance
+            path: Path to file
+
+        """
+        with self.app.open_resource(path) as f:
+            data = f.read()
+            content_type = mimetypes.MimeTypes().guess_type(path)[0]
+
+            msg.attach(
+                os.path.basename(path),
+                content_type=content_type or "application/octet-stream",
+                data=data
+            )
+
 
     def schedule(self, msg: Message, scheduled_at: dt.datetime = None):
         """Schedules a single message instance to send in future.
