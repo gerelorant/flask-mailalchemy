@@ -1,0 +1,3 @@
+recursive-include flask_mailalchemy/templates *
+recursive-include flask_mailalchemy/static *
+include flask_mailalchemy/*

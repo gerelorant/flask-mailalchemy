@@ -1,0 +1,4 @@
+Flask
+Flask-Mail
+SQLAlchemy
+werkzeug

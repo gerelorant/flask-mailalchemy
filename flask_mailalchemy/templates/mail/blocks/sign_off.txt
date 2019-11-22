@@ -1,0 +1,4 @@
+Sincerely,
+Admin Team
+
+(This is the sign off block. Edit this in the `templates/mail/blocks/sign_off.txt` file.)
