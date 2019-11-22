@@ -1,0 +1,5 @@
+{% extends 'mail/base.txt' %}
+
+{% block content %}
+Hello {{name}}!
+{% endblock %}

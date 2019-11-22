@@ -4,6 +4,6 @@
 
 {% block content%}{% endblock %}
 
-{% block sign_off %}{% include "mail/blocks/sig n_off.txt" %}{% endblock %}
+{% block sign_off %}{% include "mail/blocks/sign_off.txt" %}{% endblock %}
 
 {% block footer %}{% include "mail/blocks/footer.txt" %}{% endblock %}

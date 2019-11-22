@@ -2,7 +2,7 @@ import datetime as dt
 from smtplib import SMTPDataError, SMTPSenderRefused, SMTPRecipientsRefused
 
 from flask import current_app
-from flask_mail import Message
+from flask_mail import Message, Connection
 import sqlalchemy as sa
 from werkzeug.local import LocalProxy
 
@@ -22,6 +22,7 @@ class MailLimitError(Exception):
 
 class EmailMixin:
     """Declerative mixin class for e-mail table."""
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
     sender_address = sa.Column(sa.String(255), nullable=False, index=True)
     sender_name = sa.Column(sa.String(80))
     subject = sa.Column(sa.String(80), nullable=False, index=True)
@@ -36,7 +37,6 @@ class EmailMixin:
     )
     sent_at = sa.Column(
         sa.DateTime,
-        default=dt.datetime.utcnow,
         index=True
     )
     error = sa.Column(sa.Text)
@@ -57,14 +57,19 @@ class EmailMixin:
     @classmethod
     def from_message(cls, msg: Message) -> tuple:
         messages = []
+        if isinstance(msg.recipients, str):
+            msg.recipients = [msg.recipients]
 
         for recipient in msg.recipients:
             email = cls()
             email.recipient = recipient
-            if isinstance(msg.sender, str):
-                email.sender_address = msg.sender
+            if msg.sender.endswith(">"):
+                separator = msg.sender.rfind("<")
+                email.sender_address = msg.sender[separator+1:-1]
+                email.sender_name = msg.sender[:separator].strip()
             else:
-                email.sender_name, email.sender_address = msg.sender
+                email.sender_address = msg.sender
+
             email.subject = msg.subject
             email.message_html = msg.html
             email.message_txt = msg.body
@@ -80,37 +85,42 @@ class EmailMixin:
 
         now = dt.datetime.utcnow()
 
-        in_minute = db.session.query(sa.func.count(cls))\
-            .filter(cls.sent_at > now - dt.timedelta(minutes=1))\
-            .first()\
-            .scalar()
-        if in_minute >= per_minute:
-            raise MailLimitError(f"Per minute limit ({per_minute}) exceeded.")
+        qry = db.session.query(sa.func.count(cls.id))\
+            .filter(cls.sent_at != None)\
 
-        in_hour = mail.db.session.query(sa.func.count(cls))\
-            .filter(cls.sent_at > now - dt.timedelta(hours=1))\
-            .first()\
-            .scalar()
-        if in_hour >= per_hour:
-            raise MailLimitError(f"Hourly limit ({per_hour}) exceeded.")
+        if per_minute is not None:
+            in_minute = qry\
+                .filter(cls.sent_at > now - dt.timedelta(minutes=1))\
+                .first()[0] or 0
+            if in_minute >= per_minute:
+                raise MailLimitError(f"Per minute limit ({per_minute}) exceeded.")
 
-        in_day = mail.db.session.query(sa.func.count(cls))\
-            .filter(cls.sent_at > now - dt.timedelta(days=1))\
-            .first()\
-            .scalar()
-        if in_day >= per_day:
-            raise MailLimitError(f"Daily limit ({per_day}) exceeded.")
+        if per_hour is not None:
+            in_hour = qry\
+                .filter(cls.sent_at > now - dt.timedelta(hours=1))\
+                .first()\
+                .first()[0] or 0
+            if in_hour >= per_hour:
+                raise MailLimitError(f"Hourly limit ({per_hour}) exceeded.")
+
+        if per_day is not None:
+            in_day = qry\
+                .filter(cls.sent_at > now - dt.timedelta(days=1))\
+                .first()\
+                .first()[0] or 0
+            if in_day >= per_day:
+                raise MailLimitError(f"Daily limit ({per_day}) exceeded.")
 
     @classmethod
     def unsent(cls):
-        qry = getattr(cls, 'qry')
+        qry = getattr(cls, 'query')
         return qry.filter_by(sent_at=None)
 
     @classmethod
     def scheduled(cls):
         return cls.unsent().filter(cls.scheduled_at < dt.datetime.utcnow())
 
-    def send(self, connection):
+    def send(self, connection: Connection = None):
         type(self).check_limit()
 
         msg = self.message
@@ -132,7 +142,7 @@ class EmailMixin:
 
     @classmethod
     def send_scheduled(cls):
-        with mail.connection() as conn:
+        with mail.connect() as conn:
             for email in cls.scheduled().all():
                 try:
                     email.send(conn)

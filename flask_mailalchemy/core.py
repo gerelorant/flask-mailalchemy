@@ -68,7 +68,7 @@ class MailAlchemy:
             self.email_class = Email
 
         self.app.register_blueprint(
-            Blueprint("mail", __name__, template_folder="mail")
+            Blueprint("mail", __name__, url_prefix='/mail', template_folder="templates")
         )
 
     def send(self, msg: Message):
@@ -112,12 +112,12 @@ class MailAlchemy:
 
         """
         try:
-            msg.body = render_template(template + ".txt", **context)
+            msg.body = render_template(f"mail/{template}.txt", **context)
         except FileNotFoundError:
             pass
 
         try:
-            msg.html = render_template(template + ".html", **context)
+            msg.html = render_template(f"mail/{template}.html", **context)
         except FileNotFoundError:
             pass
 
@@ -137,6 +137,8 @@ class MailAlchemy:
         for email in self.email_class.from_message(msg):
             email.scheduled_at = scheduled_at
             self.db.session.add(email)
+
+        self.db.session.commit()
 
     def schedule_message(
             self,
