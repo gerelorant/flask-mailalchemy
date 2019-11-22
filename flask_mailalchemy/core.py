@@ -6,7 +6,7 @@ from flask import Flask, Blueprint, render_template
 from flask_mail import Mail, Message
 from flask_sqlalchemy import SQLAlchemy
 
-from flask_mailalchemy.model import EmailMixin
+from flask_mailalchemy.model import AttachmentMixin, EmailMixin
 
 
 class MailAlchemy:
@@ -29,6 +29,7 @@ class MailAlchemy:
         self.app = app
         self.db = db
         self.mail = None
+        self.attachment_class = None
         self.email_class = email_class
         self.__stop_worker__ = False
 
@@ -60,16 +61,46 @@ class MailAlchemy:
 
         self.mail = Mail(self.app)
 
+        class Attachment(db.Model, AttachmentMixin):
+            pass
+
+        self.attachment_class = Attachment
+
         self.email_class = self.email_class or email_class
         if self.email_class is None:
             class Email(db.Model, EmailMixin):
-                pass
+                attachments = db.relationship(
+                    Attachment,
+                    secondary=db.Table(
+                        "email_attachment",
+                        db.Column(
+                            "email_id",
+                            db.Integer,
+                            db.ForeignKey("email.id"),
+                            primary_key=True
+                        ),
+                        db.Column(
+                            "attachment_id",
+                            db.Integer,
+                            db.ForeignKey("attachment.id"),
+                            primary_key=True
+                        )
+                    ),
+                    backref="emails"
+                )
 
             self.email_class = Email
 
         self.app.register_blueprint(
-            Blueprint("mail", __name__, url_prefix='/mail', template_folder="templates")
+            Blueprint(
+                "mail",
+                __name__,
+                url_prefix='/mail',
+                template_folder="templates"
+            )
         )
+
+        self.app.extensions["mail_alchemy"] = self
 
     def send(self, msg: Message):
         """Sends a single message instance.
@@ -99,7 +130,8 @@ class MailAlchemy:
         msg = Message(*args, **kwargs)
         self.send(msg)
 
-    def render_template(self, msg: Message, template: str, **context):
+    @staticmethod
+    def render_template(msg: Message, template: str, **context):
         """Renders plaintext and HTML content for Message.
 
         Message body is set from template found with .txt ending, html is set
@@ -112,12 +144,18 @@ class MailAlchemy:
 
         """
         try:
-            msg.body = render_template(f"mail/{template}.txt", **context)
+            msg.body = render_template(
+                "mail/{}.txt".format(template),
+                **context
+            )
         except FileNotFoundError:
             pass
 
         try:
-            msg.html = render_template(f"mail/{template}.html", **context)
+            msg.html = render_template(
+                "mail/{}.html".format(template),
+                **context
+            )
         except FileNotFoundError:
             pass
 

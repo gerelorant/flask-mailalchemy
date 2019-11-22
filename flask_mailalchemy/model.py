@@ -10,6 +10,7 @@ from werkzeug.local import LocalProxy
 db = LocalProxy(lambda: current_app.extensions.get("sqlalchemy").db)
 config = LocalProxy(lambda: current_app.config)
 mail = LocalProxy(lambda: current_app.extensions.get("mail"))
+mail_alchemy = LocalProxy(lambda: current_app.extensions.get("mail_alchemy"))
 
 
 class MailNotSetError(Exception):
@@ -20,8 +21,16 @@ class MailLimitError(Exception):
     pass
 
 
+class AttachmentMixin:
+    """Declarative mixin class for e-mail attachments."""
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    filename = sa.Column(sa.String(255))
+    content_type = sa.Column(sa.String(40))
+    data = sa.Column(sa.LargeBinary)
+
+
 class EmailMixin:
-    """Declerative mixin class for e-mail table."""
+    """Declarative mixin class for e-mail table."""
     id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
     sender_address = sa.Column(sa.String(255), nullable=False, index=True)
     sender_name = sa.Column(sa.String(80))
@@ -46,7 +55,7 @@ class EmailMixin:
         sender = self.sender_address \
             if self.sender_name is None \
             else (self.sender_name, self.sender_address)
-        return Message(
+        msg = Message(
             self.subject,
             [self.recipient],
             self.message_txt,
@@ -54,25 +63,58 @@ class EmailMixin:
             sender
         )
 
+        if hasattr(self, "attachments"):
+            for attachment in self.attachments:
+                msg.attach(
+                    filename=attachment.filename,
+                    content_type=attachment.content_type,
+                    data=attachment.data
+                )
+
+        return msg
+
     @classmethod
     def from_message(cls, msg: Message) -> tuple:
         messages = []
         if isinstance(msg.recipients, str):
-            msg.recipients = [msg.recipients]
+            recipients = [msg.recipients]
+        else:
+            recipients = msg.recipients
 
-        for recipient in msg.recipients:
+        if msg.sender.endswith(">"):
+            separator = msg.sender.rfind("<")
+            sender_address = msg.sender[separator+1:-1]
+            sender_name = msg.sender[:separator].strip()
+        else:
+            sender_address = msg.sender
+            sender_name = None
+
+        subject = msg.subject
+        message_html = msg.html
+        message_txt = msg.body
+
+        attachments = []
+        if hasattr(cls, "attachments"):
+            for a in msg.attachments:
+                attachment = mail_alchemy.attachment_class()
+                attachment.filename = a.filename
+                attachment.content_type = a.content_type
+                attachment.data = a.data
+                db.session.add(attachment)
+                attachments.append(attachment)
+
+        for recipient in recipients:
             email = cls()
             email.recipient = recipient
-            if msg.sender.endswith(">"):
-                separator = msg.sender.rfind("<")
-                email.sender_address = msg.sender[separator+1:-1]
-                email.sender_name = msg.sender[:separator].strip()
-            else:
-                email.sender_address = msg.sender
+            email.sender_address = sender_address
+            email.sender_name = sender_name
+            email.subject = subject
+            email.message_html = message_html
+            email.message_txt = message_txt
 
-            email.subject = msg.subject
-            email.message_html = msg.html
-            email.message_txt = msg.body
+            if hasattr(email, "attachments"):
+                email.attachments.extend(attachments)
+
             messages.append(email)
 
         return tuple(messages)
@@ -93,7 +135,9 @@ class EmailMixin:
                 .filter(cls.sent_at > now - dt.timedelta(minutes=1))\
                 .first()[0] or 0
             if in_minute >= per_minute:
-                raise MailLimitError(f"Per minute limit ({per_minute}) exceeded.")
+                raise MailLimitError(
+                    f"Per minute limit ({per_minute}) exceeded."
+                )
 
         if per_hour is not None:
             in_hour = qry\
